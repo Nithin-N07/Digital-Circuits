@@ -414,86 +414,96 @@ function verifyASTs(vars, ttOriginal, astSOP, astNAND, astNOR) {
     return true;
 }
 // ------------------------------------------------------------------
-// SVG Rendering Engine (Updated with proper margins & pin alignment)
+// SVG Rendering Engine (V2 - Strict Bounding Box & Pin Alignment)
 // ------------------------------------------------------------------
-
-function getTreeDepth(node) {
-    if (!node.children || node.children.length === 0) return 1;
-    return 1 + Math.max(...node.children.map(getTreeDepth));
-}
 
 function layoutNode(node) {
     if (node.type === 'VAR' || node.type === 'CONST') {
-        node.w = 50; 
-        node.h = 40; 
-        return { w: 50, h: 40 };
+        node.w = 60; node.h = 40; return {w: 60, h: 40};
     }
-    let totalH = 0;
-    let maxW = 0;
+    let totalH = 0; let maxW = 0;
     node.children.forEach((c) => {
         let dim = layoutNode(c);
         totalH += dim.h;
         maxW = Math.max(maxW, dim.w);
     });
-    let gap = 25;
-    node.h = Math.max(totalH + (node.children.length - 1) * gap, 70);
-    node.w = maxW + 120;
-    return { w: node.w, h: node.h };
+    let gap = 20; // Vertical gap between branches
+    node.h = Math.max(totalH + (node.children.length - 1) * gap, 60);
+    node.w = maxW + 100; // Horizontal gap between layers
+    return {w: node.w, h: node.h};
 }
 
 function positionNode(node, x, y) {
-    node.x = x; 
-    node.y = y;
+    node.x = x; node.y = y;
     if (!node.children || node.children.length === 0) return;
     
-    let totalChildrenHeight = node.children.reduce((sum, c) => sum + c.h, 0) + (node.children.length - 1) * 25;
-    let startY = y - totalChildrenHeight / 2;
+    let totalH = node.children.reduce((sum, c) => sum + c.h, 0);
+    let totalGap = (node.children.length - 1) * 20;
+    let startY = y - (totalH + totalGap) / 2;
     
     node.children.forEach(c => {
-        let childCenterY = startY + c.h / 2;
-        positionNode(c, x - 120, childCenterY);
-        startY += c.h + 25;
+        let childY = startY + c.h / 2;
+        positionNode(c, x - 100, childY); // 100px fixed wire length
+        startY += c.h + 20;
     });
 }
 
-function getMinX(node) {
-    if (!node.children || node.children.length === 0) return node.x;
-    return Math.min(node.x, ...node.children.map(getMinX));
+function getGateInX(type, x) {
+    if (type === 'OR' || type === 'NOR') return x - 15; // Account for curved back
+    return x - 20; // Flat back gates
 }
 
-function shiftTreeX(node, deltaX) {
-    node.x += deltaX;
-    if (node.children) {
-        node.children.forEach(c => shiftTreeX(c, deltaX));
-    }
+function getGateOutX(type, x) {
+    if (type === 'VAR' || type === 'CONST') return x + 20;
+    if (type === 'NOT') return x + 13;
+    if (type === 'AND' || type === 'OR') return x + 20;
+    if (type === 'NAND' || type === 'NOR') return x + 28;
+    return x;
 }
 
 function renderAST(node) {
-    if (node.type === 'CONST') {
-        return `<svg width="200" height="60"><text x="100" y="35" text-anchor="middle" font-family="sans-serif">Constant Output: ${node.value}</text></svg>`;
+    if(node.type === 'CONST') {
+        return `<svg width="200" height="60"><text x="100" y="35" text-anchor="middle" font-family="sans-serif">Output is constant ${node.value}</text></svg>`;
     }
-
+    
+    // 1. Initial Layout
     layoutNode(node);
-    positionNode(node, node.w, node.h / 2 + 40);
+    positionNode(node, 0, 0); // Temporary coordinates
 
-    // Ensure left-most elements have ample breathing room from the edge
-    let minX = getMinX(node);
-    let leftPadding = 50;
-    if (minX < leftPadding) {
-        shiftTreeX(node, leftPadding - minX);
+    // 2. Strict Bounding Box Calculation
+    let bounds = { minX: Infinity, maxX: -Infinity, minY: Infinity, maxY: -Infinity };
+    function calcBounds(n) {
+        bounds.minX = Math.min(bounds.minX, n.x - 40);
+        bounds.maxX = Math.max(bounds.maxX, n.x + 40);
+        bounds.minY = Math.min(bounds.minY, n.y - 40);
+        bounds.maxY = Math.max(bounds.maxY, n.y + 40);
+        if(n.children) n.children.forEach(calcBounds);
     }
+    calcBounds(node);
 
-    let svgWidth = node.x + 120;
-    let svgHeight = node.h + 80;
+    // 3. Shift everything strictly into positive coordinates with 30px padding
+    let padX = 30; let padY = 30;
+    let shiftX = -bounds.minX + padX;
+    let shiftY = -bounds.minY + padY;
+    
+    function applyShift(n) {
+        n.x += shiftX; n.y += shiftY;
+        if(n.children) n.children.forEach(applyShift);
+    }
+    applyShift(node);
 
+    let svgWidth = (bounds.maxX - bounds.minX) + (padX * 2) + 60; // Extra room for 'Out' label
+    let svgHeight = (bounds.maxY - bounds.minY) + (padY * 2);
+
+    // 4. Render
     let svg = `<svg width="${svgWidth}" height="${svgHeight}" xmlns="http://www.w3.org/2000/svg">`;
     svg += drawConnections(node);
     svg += drawNodes(node);
     
-    // Output wire and label
-    let outPinX = (node.type === 'NAND' || node.type === 'NOR') ? node.x + 24 : (node.type === 'NOT' ? node.x + 18 : node.x + 20);
-    svg += `<path d="M ${outPinX},${node.y} L ${outPinX + 35},${node.y}" stroke="#0f172a" stroke-width="2" fill="none"/>`;
-    svg += `<text x="${outPinX + 45}" y="${node.y + 5}" font-family="sans-serif" font-weight="bold" font-size="14" fill="#0f172a">Out</text>`;
+    // Draw Final Output Wire
+    let outPinX = getGateOutX(node.type, node.x);
+    svg += `<path d="M ${outPinX},${node.y} L ${outPinX + 30},${node.y}" stroke="#0f172a" stroke-width="2" fill="none"/>`;
+    svg += `<text x="${outPinX + 40}" y="${node.y + 5}" font-family="sans-serif" font-weight="bold" fill="#0f172a">Out</text>`;
     svg += `</svg>`;
     return svg;
 }
@@ -504,23 +514,15 @@ function drawConnections(node) {
     let numChildren = node.children.length;
 
     node.children.forEach((c, idx) => {
-        let outX = (c.type === 'VAR' || c.type === 'CONST') 
-                   ? c.x + 15 
-                   : (c.type === 'NAND' || c.type === 'NOR') 
-                     ? c.x + 24 
-                     : (c.type === 'NOT' ? c.x + 18 : c.x + 20);
-        
-        let inX = (node.type === 'NOT') ? node.x - 15 : node.x - 20;
+        let outX = getGateOutX(c.type, c.x);
+        let inX = getGateInX(node.type, node.x);
 
-        // Distribute multi-input wires vertically to gate pins
-        let inY = node.y;
-        if (numChildren > 1) {
-            let spread = Math.min(24, (numChildren - 1) * 12);
-            let step = spread / (numChildren - 1);
-            inY = (node.y - spread / 2) + idx * step;
-        }
+        // Distribute pins vertically based on number of inputs
+        let spread = Math.min(30, (numChildren - 1) * 15);
+        let step = numChildren > 1 ? spread / (numChildren - 1) : 0;
+        let inY = (node.y - spread / 2) + (idx * step);
 
-        let midX = (outX + inX) / 2;
+        let midX = outX + (inX - outX) / 2;
         svg += `<path d="M ${outX},${c.y} H ${midX} V ${inY} H ${inX}" fill="none" stroke="#64748b" stroke-width="2"/>`;
         svg += drawConnections(c);
     });
@@ -535,25 +537,25 @@ function drawNodes(node) {
     let nx = node.x, ny = node.y;
     
     if (node.type === 'VAR' || node.type === 'CONST') {
-        svg += `<rect x="${nx-15}" y="${ny-12}" width="30" height="24" rx="4" fill="#f1f5f9" stroke="#94a3b8" stroke-width="1.5"/>`;
-        svg += `<text x="${nx}" y="${ny+5}" font-family="monospace" font-size="15" font-weight="bold" fill="#0f172a" text-anchor="middle">${node.value}</text>`;
+        svg += `<rect x="${nx-20}" y="${ny-15}" width="40" height="30" rx="4" fill="#f8fafc" stroke="#64748b" stroke-width="1.5"/>`;
+        svg += `<text x="${nx}" y="${ny+5}" font-family="monospace" font-size="16" font-weight="bold" fill="#0f172a" text-anchor="middle">${node.value}</text>`;
     } else if (node.type === 'AND') {
-        svg += `<path d="M ${nx-20},${ny-18} L ${nx},${ny-18} A 18,18 0 0,1 ${nx},${ny+18} L ${nx-20},${ny+18} Z" fill="#e2e8f0" stroke="#0f172a" stroke-width="2"/>`;
-        svg += `<text x="${nx-6}" y="${ny+4}" font-size="9" font-family="sans-serif" text-anchor="middle" font-weight="bold">AND</text>`;
+        svg += `<path d="M ${nx-20},${ny-20} L ${nx},${ny-20} A 20,20 0 0,1 ${nx},${ny+20} L ${nx-20},${ny+20} Z" fill="#e2e8f0" stroke="#0f172a" stroke-width="2"/>`;
+        svg += `<text x="${nx-5}" y="${ny+3}" font-size="9" font-family="sans-serif" text-anchor="middle" font-weight="bold">AND</text>`;
     } else if (node.type === 'OR') {
-        svg += `<path d="M ${nx-20},${ny-18} Q ${nx-5},${ny-18} ${nx+8},${ny-9} Q ${nx+20},${ny} ${nx+8},${ny+9} Q ${nx-5},${ny+18} ${nx-20},${ny+18} Q ${nx-10},${ny} ${nx-20},${ny-18} Z" fill="#e2e8f0" stroke="#0f172a" stroke-width="2"/>`;
-        svg += `<text x="${nx-3}" y="${ny+4}" font-size="9" font-family="sans-serif" text-anchor="middle" font-weight="bold">OR</text>`;
+        svg += `<path d="M ${nx-20},${ny-20} Q ${nx},${ny} ${nx-20},${ny+20} Q ${nx+10},${ny+20} ${nx+20},${ny} Q ${nx+10},${ny-20} ${nx-20},${ny-20} Z" fill="#e2e8f0" stroke="#0f172a" stroke-width="2"/>`;
+        svg += `<text x="${nx}" y="${ny+3}" font-size="9" font-family="sans-serif" text-anchor="middle" font-weight="bold">OR</text>`;
     } else if (node.type === 'NOT') {
-        svg += `<polygon points="${nx-15},${ny-14} ${nx+8},${ny} ${nx-15},${ny+14}" fill="#e2e8f0" stroke="#0f172a" stroke-width="2"/>`;
-        svg += `<circle cx="${nx+13}" cy="${ny}" r="4" fill="white" stroke="#0f172a" stroke-width="2"/>`;
+        svg += `<path d="M ${nx-20},${ny-15} L ${nx+5},${ny} L ${nx-20},${ny+15} Z" fill="#e2e8f0" stroke="#0f172a" stroke-width="2"/>`;
+        svg += `<circle cx="${nx+9}" cy="${ny}" r="4" fill="white" stroke="#0f172a" stroke-width="2"/>`;
     } else if (node.type === 'NAND') {
-        svg += `<path d="M ${nx-20},${ny-18} L ${nx},${ny-18} A 18,18 0 0,1 ${nx},${ny+18} L ${nx-20},${ny+18} Z" fill="#e2e8f0" stroke="#0f172a" stroke-width="2"/>`;
-        svg += `<circle cx="${nx+22}" cy="${ny}" r="4" fill="white" stroke="#0f172a" stroke-width="2"/>`;
-        svg += `<text x="${nx-6}" y="${ny+4}" font-size="9" font-family="sans-serif" text-anchor="middle" font-weight="bold">NAND</text>`;
-    } else if (node.type === 'NOR') {
-        svg += `<path d="M ${nx-20},${ny-18} Q ${nx-5},${ny-18} ${nx+8},${ny-9} Q ${nx+20},${ny} ${nx+8},${ny+9} Q ${nx-5},${ny+18} ${nx-20},${ny+18} Q ${nx-10},${ny} ${nx-20},${ny-18} Z" fill="#e2e8f0" stroke="#0f172a" stroke-width="2"/>`;
+        svg += `<path d="M ${nx-20},${ny-20} L ${nx},${ny-20} A 20,20 0 0,1 ${nx},${ny+20} L ${nx-20},${ny+20} Z" fill="#e2e8f0" stroke="#0f172a" stroke-width="2"/>`;
         svg += `<circle cx="${nx+24}" cy="${ny}" r="4" fill="white" stroke="#0f172a" stroke-width="2"/>`;
-        svg += `<text x="${nx-3}" y="${ny+4}" font-size="9" font-family="sans-serif" text-anchor="middle" font-weight="bold">NOR</text>`;
+        svg += `<text x="${nx-5}" y="${ny+3}" font-size="9" font-family="sans-serif" text-anchor="middle" font-weight="bold">NAND</text>`;
+    } else if (node.type === 'NOR') {
+        svg += `<path d="M ${nx-20},${ny-20} Q ${nx},${ny} ${nx-20},${ny+20} Q ${nx+10},${ny+20} ${nx+20},${ny} Q ${nx+10},${ny-20} ${nx-20},${ny-20} Z" fill="#e2e8f0" stroke="#0f172a" stroke-width="2"/>`;
+        svg += `<circle cx="${nx+24}" cy="${ny}" r="4" fill="white" stroke="#0f172a" stroke-width="2"/>`;
+        svg += `<text x="${nx}" y="${ny+3}" font-size="9" font-family="sans-serif" text-anchor="middle" font-weight="bold">NOR</text>`;
     }
     return svg;
 }
