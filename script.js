@@ -107,9 +107,14 @@ function processInput() {
 
 function evaluateExpression(expr, inputs) {
     let norm = expr.toUpperCase()
+                   .replace(/\s+/g, '')
                    .replace(/AND/g, '&').replace(/OR/g, '|').replace(/NOT/g, '~')
                    .replace(/\*/g, '&').replace(/\+/g, '|')
-                   .replace(/!/g, '~').replace(/\s+/g, '');
+                   .replace(/!/g, '~');
+    
+    // Fix for implicit ANDs (e.g., ABC -> A&B&C, or A(B) -> A&(B) )
+    // This matches any letter or ')' followed immediately by a letter, '(', or '~'
+    norm = norm.replace(/([A-Z\)])(?=[A-Z\(~])/g, '$1&');
     
     // Replace variables with their values
     Object.keys(inputs).forEach(v => {
@@ -240,9 +245,11 @@ function runSynthesis(vars, tt) {
     renderTruthTable(vars, tt);
 
     // Build ASTs
-    const astStandard = buildSopAST(sopTerms);
-    const astNAND = buildNandAST(sopTerms);
-    const astNOR = buildNorAST(posTerms);
+    const astStandard = buildStandardAST(sopTerms);
+    const astStandardPOS = buildPOSStandardAST(posTerms);
+    
+    const astNAND = convertToNAND(astStandard);
+    const astNOR = convertToNOR(astStandardPOS);
 
     // Verify Output
     const verified = verifyASTs(vars, tt, astStandard, astNAND, astNOR);
@@ -299,88 +306,81 @@ function renderTruthTable(vars, tt) {
 }
 
 // ------------------------------------------------------------------
-// AST Construction
+// AST Construction (Strict 2-Input Gates & Smart Conversion)
 // ------------------------------------------------------------------
 
-function buildSopAST(sopTerms) {
+function buildStandardAST(sopTerms) {
     if (sopTerms.length === 0) return { type: 'CONST', value: 0 };
     if (sopTerms[0][0] === '1') return { type: 'CONST', value: 1 };
 
-    let orNode = { type: 'OR', children: [] };
-    sopTerms.forEach(term => {
-        let andNode = { type: 'AND', children: [] };
-        term.forEach(lit => {
-            if (lit.startsWith('~')) {
-                andNode.children.push({ type: 'NOT', children: [{ type: 'VAR', value: lit.substring(1) }] });
-            } else {
-                andNode.children.push({ type: 'VAR', value: lit });
-            }
+    let orNodes = sopTerms.map(term => {
+        let andNodes = term.map(lit => {
+            if (lit.startsWith('~')) return { type: 'NOT', children: [{ type: 'VAR', value: lit.substring(1) }] };
+            return { type: 'VAR', value: lit };
         });
-        if (andNode.children.length === 1) orNode.children.push(andNode.children[0]);
-        else orNode.children.push(andNode);
+        // Cascade into 2-input AND gates
+        return andNodes.reduce((acc, curr) => ({ type: 'AND', children: [acc, curr] }));
     });
-    if (orNode.children.length === 1) return orNode.children[0];
-    return orNode;
-}
-
-function buildNandAST(sopTerms) {
-    if (sopTerms.length === 0) return { type: 'CONST', value: 0 };
-    if (sopTerms[0][0] === '1') return { type: 'CONST', value: 1 };
     
-    let rootNode = { type: 'NAND', children: [] };
-    sopTerms.forEach(term => {
-        let termNand = { type: 'NAND', children: [] };
-        term.forEach(lit => {
-            if (lit.startsWith('~')) {
-                let v = lit.substring(1);
-                termNand.children.push({ type: 'NAND', children: [{type:'VAR', value:v}, {type:'VAR', value:v}] });
-            } else {
-                termNand.children.push({ type: 'VAR', value: lit });
-            }
-        });
-        if (termNand.children.length === 1) {
-            let single = termNand.children[0];
-            rootNode.children.push({ type: 'NAND', children: [single, single] });
-        } else {
-            rootNode.children.push(termNand);
-        }
-    });
-    if (rootNode.children.length === 1) {
-        let singleTerm = rootNode.children[0];
-        return { type: 'NAND', children: [singleTerm, singleTerm] }; 
-    }
-    return rootNode;
+    // Cascade into 2-input OR gates
+    return orNodes.reduce((acc, curr) => ({ type: 'OR', children: [acc, curr] }));
 }
 
-function buildNorAST(posTerms) {
+function buildPOSStandardAST(posTerms) {
     if (posTerms.length === 0) return { type: 'CONST', value: 1 };
-    if (posTerms[0][0] === '1') return { type: 'CONST', value: 0 }; // Since terms are inverted
-    
-    let rootNode = { type: 'NOR', children: [] };
-    posTerms.forEach(term => {
-        let termNor = { type: 'NOR', children: [] };
-        term.forEach(lit => {
-            if (lit.startsWith('~')) {
-                let v = lit.substring(1);
-                termNor.children.push({ type: 'NOR', children: [{type:'VAR', value:v}, {type:'VAR', value:v}] });
-            } else {
-                termNor.children.push({ type: 'VAR', value: lit });
-            }
+    if (posTerms[0][0] === '1') return { type: 'CONST', value: 0 };
+
+    let andNodes = posTerms.map(term => {
+        let orNodes = term.map(lit => {
+            if (lit.startsWith('~')) return { type: 'NOT', children: [{ type: 'VAR', value: lit.substring(1) }] };
+            return { type: 'VAR', value: lit };
         });
-        if (termNor.children.length === 1) {
-            let single = termNor.children[0];
-            rootNode.children.push({ type: 'NOR', children: [single, single] });
-        } else {
-            rootNode.children.push(termNor);
-        }
+        // Cascade into 2-input OR gates
+        return orNodes.reduce((acc, curr) => ({ type: 'OR', children: [acc, curr] }));
     });
-    if (rootNode.children.length === 1) {
-        let singleTerm = rootNode.children[0];
-        return { type: 'NOR', children: [singleTerm, singleTerm] };
-    }
-    return rootNode;
+    
+    // Cascade into 2-input AND gates
+    return andNodes.reduce((acc, curr) => ({ type: 'AND', children: [acc, curr] }));
 }
 
+// -- NAND Conversion Engine (Removes double-negations automatically) --
+
+function NOT_NAND(node) {
+    // If we try to NOT a NAND whose inputs are already tied (which is a NOT), cancel them out!
+    if (node.type === 'NAND' && node.children[0] === node.children[1]) return node.children[0];
+    return { type: 'NAND', children: [node, node] };
+}
+function AND_NAND(a, b) {
+    return NOT_NAND({ type: 'NAND', children: [a, b] });
+}
+function OR_NAND(a, b) {
+    return { type: 'NAND', children: [NOT_NAND(a), NOT_NAND(b)] };
+}
+function convertToNAND(node) {
+    if (node.type === 'VAR' || node.type === 'CONST') return node;
+    if (node.type === 'NOT') return NOT_NAND(convertToNAND(node.children[0]));
+    if (node.type === 'AND') return AND_NAND(convertToNAND(node.children[0]), convertToNAND(node.children[1]));
+    if (node.type === 'OR') return OR_NAND(convertToNAND(node.children[0]), convertToNAND(node.children[1]));
+}
+
+// -- NOR Conversion Engine (Removes double-negations automatically) --
+
+function NOT_NOR(node) {
+    if (node.type === 'NOR' && node.children[0] === node.children[1]) return node.children[0];
+    return { type: 'NOR', children: [node, node] };
+}
+function OR_NOR(a, b) {
+    return NOT_NOR({ type: 'NOR', children: [a, b] });
+}
+function AND_NOR(a, b) {
+    return { type: 'NOR', children: [NOT_NOR(a), NOT_NOR(b)] };
+}
+function convertToNOR(node) {
+    if (node.type === 'VAR' || node.type === 'CONST') return node;
+    if (node.type === 'NOT') return NOT_NOR(convertToNOR(node.children[0]));
+    if (node.type === 'AND') return AND_NOR(convertToNOR(node.children[0]), convertToNOR(node.children[1]));
+    if (node.type === 'OR') return OR_NOR(convertToNOR(node.children[0]), convertToNOR(node.children[1]));
+}
 // ------------------------------------------------------------------
 // AST Evaluation (Verification)
 // ------------------------------------------------------------------
