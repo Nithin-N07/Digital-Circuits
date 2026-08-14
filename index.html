@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Digital Logic Synthesizer</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <header>
+        <div class="container">
+            <h1>Digital Logic Synthesizer</h1>
+            <p>Minimize expressions, generate truth tables, and synthesize standard, NAND-only, and NOR-only logic circuits entirely in your browser.</p>
+        </div>
+    </header>
+
+    <main class="container">
+        <section class="card input-section">
+            <div class="tabs">
+                <button class="tab active" data-target="tab-expr">Boolean Expression</button>
+                <button class="tab" data-target="tab-minterms">Minterms</button>
+                <button class="tab" data-target="tab-tt">Truth Table</button>
+            </div>
+
+            <div class="tab-content active" id="tab-expr">
+                <label>Expression (Use &, |, ~ for AND, OR, NOT):</label>
+                <input type="text" id="inputExpr" placeholder="e.g. A & B | ~C">
+                <small>You can also use *, +, ! or type AND, OR, NOT.</small>
+            </div>
+
+            <div class="tab-content" id="tab-minterms">
+                <label>Variables (comma separated):</label>
+                <input type="text" id="inputVarsMin" placeholder="e.g. A, B, C">
+                <label>Minterms (comma separated integers):</label>
+                <input type="text" id="inputMinterms" placeholder="e.g. 0, 1, 4, 5">
+            </div>
+
+            <div class="tab-content" id="tab-tt">
+                <label>Variables (comma separated):</label>
+                <input type="text" id="inputVarsTT" placeholder="e.g. A, B, C">
+                <button id="btnGenerateTTInputs" class="secondary-btn">Generate Table Input</button>
+                <div id="ttInputContainer"></div>
+            </div>
+
+            <button id="btnSynthesize" class="primary-btn">Synthesize Circuit</button>
+            <div id="errorMsg" class="error"></div>
+        </section>
+
+        <section class="card output-section" id="outputs" style="display: none;">
+            <h2>Synthesis Results</h2>
+            <div id="verificationMsg" class="verification"></div>
+
+            <div class="grid-2">
+                <div class="result-box">
+                    <h3>Minimized Expressions</h3>
+                    <p><strong>SOP (Sum of Products):</strong> <span id="outSOP" class="code-font"></span></p>
+                    <p><strong>POS (Product of Sums):</strong> <span id="outPOS" class="code-font"></span></p>
+                </div>
+                <div class="result-box">
+                    <h3>Truth Table</h3>
+                    <div id="ttOutputContainer"></div>
+                </div>
+            </div>
+
+            <h3>Logic Circuits</h3>
+            
+            <div class="circuit-box">
+                <h4>Standard Circuit (AND, OR, NOT)</h4>
+                <div class="svg-container" id="svgStandard"></div>
+            </div>
+            
+            <div class="circuit-box">
+                <h4>NAND-Only Circuit</h4>
+                <div class="svg-container" id="svgNAND"></div>
+            </div>
+            
+            <div class="circuit-box">
+                <h4>NOR-Only Circuit</h4>
+                <div class="svg-container" id="svgNOR"></div>
+            </div>
+        </section>
+    </main>
+
+    <footer>
+        <div class="container">
+            <p>Generated for GitHub Pages hosting. Runs 100% client-side.</p>
+        </div>
+    </footer>
+
+    <script src="script.js"></script>
+</body>
+</html>
