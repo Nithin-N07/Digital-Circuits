@@ -1,6 +1,8 @@
-// Main Application Logic
+// ==================================================================
+// DIGITAL LOGIC SYNTHESIZER - FULL SCRIPT
+// ==================================================================
+
 document.addEventListener('DOMContentLoaded', () => {
-    
     // Tab switching logic
     document.querySelectorAll('.tab').forEach(tab => {
         tab.addEventListener('click', (e) => {
@@ -58,8 +60,8 @@ function processInput() {
             const expr = document.getElementById('inputExpr').value;
             if(!expr.trim()) throw new Error("Expression cannot be empty.");
             vars = [...new Set(expr.toUpperCase().match(/[A-Z]/g) || [])].sort();
-            if(vars.length > 6) throw new Error("Maximum 6 variables supported to prevent browser freeze.");
-            if(vars.length === 0) throw new Error("No valid variables found in expression.");
+            if(vars.length > 6) throw new Error("Maximum 6 variables supported.");
+            if(vars.length === 0) throw new Error("No valid variables found.");
             
             const rows = Math.pow(2, vars.length);
             for (let i = 0; i < rows; i++) {
@@ -102,7 +104,7 @@ function processInput() {
 }
 
 // ------------------------------------------------------------------
-// Core Logic & Evaluation
+// Core Logic & Evaluation (Supports implicit AND, e.g. ABC -> A&B&C)
 // ------------------------------------------------------------------
 
 function evaluateExpression(expr, inputs) {
@@ -112,17 +114,16 @@ function evaluateExpression(expr, inputs) {
                    .replace(/\*/g, '&').replace(/\+/g, '|')
                    .replace(/!/g, '~');
     
-    // Fix for implicit ANDs (e.g., ABC -> A&B&C, or A(B) -> A&(B) )
-    // This matches any letter or ')' followed immediately by a letter, '(', or '~'
+    // Inject implicit ANDs between adjacent variables/parentheses
     norm = norm.replace(/([A-Z\)])(?=[A-Z\(~])/g, '$1&');
     
-    // Replace variables with their values
+    // Replace variables with their binary values
     Object.keys(inputs).forEach(v => {
         let regex = new RegExp(v, 'g');
         norm = norm.replace(regex, inputs[v]);
     });
     
-    // Convert logic operators to JS operators
+    // Convert logic operators to JS evaluation operators
     let jsExpr = norm.replace(/&/g, '&&').replace(/\|/g, '||').replace(/~/g, '!');
     
     try {
@@ -160,8 +161,7 @@ function quineMcCluskey(minterms, numVars) {
         for (let i = 0; i < groups.length - 1; i++) {
             for (let t1 of groups[i]) {
                 for (let t2 of groups[i+1]) {
-                    let diffIdx = -1;
-                    let diffs = 0;
+                    let diffIdx = -1, diffs = 0;
                     for (let k = 0; k < numVars; k++) {
                         if (t1.bits[k] !== t2.bits[k]) { diffs++; diffIdx = k; }
                     }
@@ -179,7 +179,6 @@ function quineMcCluskey(minterms, numVars) {
                 }
             }
         }
-        
         for (let g of groups) {
             for (let t of g) {
                 if (!t.used && !primeImplicants.some(pi => pi.bits === t.bits)) {
@@ -190,7 +189,6 @@ function quineMcCluskey(minterms, numVars) {
         groups = nextGroups;
     }
 
-    // Find Essentials & Cover
     let uncovered = new Set(minterms);
     let essential = [];
 
@@ -207,20 +205,15 @@ function quineMcCluskey(minterms, numVars) {
 
     let solution = [...essential];
     while (uncovered.size > 0) {
-        let bestPI = null;
-        let maxCover = 0;
+        let bestPI = null, maxCover = 0;
         primeImplicants.forEach(pi => {
             if (solution.includes(pi)) return;
             let coverCount = pi.minterms.filter(m => uncovered.has(m)).length;
-            if (coverCount > maxCover) {
-                maxCover = coverCount;
-                bestPI = pi;
-            }
+            if (coverCount > maxCover) { maxCover = coverCount; bestPI = pi; }
         });
         solution.push(bestPI);
         bestPI.minterms.forEach(m => uncovered.delete(m));
     }
-
     return solution.map(pi => pi.bits);
 }
 
@@ -232,31 +225,31 @@ function runSynthesis(vars, tt) {
     const minterms1 = tt.map((v, i) => v === 1 ? i : -1).filter(i => i !== -1);
     const minterms0 = tt.map((v, i) => v === 0 ? i : -1).filter(i => i !== -1);
     
-    // Minimized Strings
     const qmSOP = quineMcCluskey(minterms1, vars.length);
-    const qmPOS = quineMcCluskey(minterms0, vars.length); // QM on zeros gives NOT(E) in SOP
+    const qmPOS = quineMcCluskey(minterms0, vars.length); 
     
     const sopTerms = qmSOP.map(bits => bitsToLiterals(bits, vars, true));
-    const posTerms = qmPOS.map(bits => bitsToLiterals(bits, vars, false)); // Inverted literals for DeMorgan
+    const posTerms = qmPOS.map(bits => bitsToLiterals(bits, vars, false));
 
-    document.getElementById('outSOP').innerText = formatEquation(sopTerms, ' + ', '');
-    document.getElementById('outPOS').innerText = formatEquation(posTerms, '', '()');
+    document.getElementById('outSOP').innerText = formatEquation(sopTerms, false);
+    document.getElementById('outPOS').innerText = formatEquation(posTerms, true);
     
     renderTruthTable(vars, tt);
 
-    // Build ASTs
+    // Build Strict 2-Input ASTs
     const astStandard = buildStandardAST(sopTerms);
     const astStandardPOS = buildPOSStandardAST(posTerms);
     
+    // Convert logic to universal gates
     const astNAND = convertToNAND(astStandard);
     const astNOR = convertToNOR(astStandardPOS);
 
-    // Verify Output
+    // Verify Outputs
     const verified = verifyASTs(vars, tt, astStandard, astNAND, astNOR);
     const msgBox = document.getElementById('verificationMsg');
     if (verified) {
         msgBox.className = 'verification success';
-        msgBox.innerText = '✓ Verification Passed: Simplified, NAND-only, and NOR-only circuits all produce outputs identical to the original truth table for every input combination.';
+        msgBox.innerText = '✓ Verification Passed: Simplified, NAND-only, and NOR-only circuits all perfectly match the original truth table.';
     } else {
         msgBox.className = 'verification fail';
         msgBox.innerText = '✗ Verification Failed: Circuit outputs do not match the original truth table.';
@@ -278,12 +271,15 @@ function bitsToLiterals(bits, vars, isSOP) {
     return term;
 }
 
-function formatEquation(terms, outerJoin, innerWrap) {
-    if (terms.length === 0) return "0";
-    if (terms[0][0] === '1') return "1";
+function formatEquation(terms, isPOS) {
+    if (terms.length === 0) return isPOS ? "1" : "0";
+    if (terms[0][0] === '1') return isPOS ? "0" : "1";
+    
+    let outerJoin = isPOS ? '' : ' + ';
+    let innerJoin = isPOS ? ' + ' : '';
     let strings = terms.map(t => {
-        let inner = t.join(outerJoin === ' + ' ? '' : ' + ');
-        return innerWrap ? `(${inner})` : inner;
+        let inner = t.join(innerJoin);
+        return isPOS ? `(${inner})` : inner;
     });
     return strings.join(outerJoin);
 }
@@ -306,7 +302,7 @@ function renderTruthTable(vars, tt) {
 }
 
 // ------------------------------------------------------------------
-// AST Construction (Strict 2-Input Gates & Smart Conversion)
+// AST Construction (Strict 2-Input Cascading)
 // ------------------------------------------------------------------
 
 function buildStandardAST(sopTerms) {
@@ -318,11 +314,11 @@ function buildStandardAST(sopTerms) {
             if (lit.startsWith('~')) return { type: 'NOT', children: [{ type: 'VAR', value: lit.substring(1) }] };
             return { type: 'VAR', value: lit };
         });
-        // Cascade into 2-input AND gates
+        if (andNodes.length === 0) return { type: 'CONST', value: 1 };
         return andNodes.reduce((acc, curr) => ({ type: 'AND', children: [acc, curr] }));
     });
     
-    // Cascade into 2-input OR gates
+    if (orNodes.length === 0) return { type: 'CONST', value: 0 };
     return orNodes.reduce((acc, curr) => ({ type: 'OR', children: [acc, curr] }));
 }
 
@@ -335,55 +331,48 @@ function buildPOSStandardAST(posTerms) {
             if (lit.startsWith('~')) return { type: 'NOT', children: [{ type: 'VAR', value: lit.substring(1) }] };
             return { type: 'VAR', value: lit };
         });
-        // Cascade into 2-input OR gates
         return orNodes.reduce((acc, curr) => ({ type: 'OR', children: [acc, curr] }));
     });
     
-    // Cascade into 2-input AND gates
     return andNodes.reduce((acc, curr) => ({ type: 'AND', children: [acc, curr] }));
 }
 
-// -- NAND Conversion Engine (Removes double-negations automatically) --
+// Deep Equality helper for canceling double negations safely
+function astEquals(n1, n2) {
+    if (n1 === n2) return true;
+    if (!n1 || !n2 || n1.type !== n2.type || n1.value !== n2.value) return false;
+    let len1 = n1.children ? n1.children.length : 0;
+    let len2 = n2.children ? n2.children.length : 0;
+    if (len1 !== len2) return false;
+    if (len1 === 0) return true;
+    for (let i = 0; i < len1; i++) {
+        if (!astEquals(n1.children[i], n2.children[i])) return false;
+    }
+    return true;
+}
 
+// Universal Gate Conversion (Automatically cancels double negations)
 function NOT_NAND(node) {
-    // If we try to NOT a NAND whose inputs are already tied (which is a NOT), cancel them out!
-    if (node.type === 'NAND' && node.children[0] === node.children[1]) return node.children[0];
+    if (node.type === 'NAND' && astEquals(node.children[0], node.children[1])) return node.children[0];
     return { type: 'NAND', children: [node, node] };
-}
-function AND_NAND(a, b) {
-    return NOT_NAND({ type: 'NAND', children: [a, b] });
-}
-function OR_NAND(a, b) {
-    return { type: 'NAND', children: [NOT_NAND(a), NOT_NAND(b)] };
 }
 function convertToNAND(node) {
     if (node.type === 'VAR' || node.type === 'CONST') return node;
     if (node.type === 'NOT') return NOT_NAND(convertToNAND(node.children[0]));
-    if (node.type === 'AND') return AND_NAND(convertToNAND(node.children[0]), convertToNAND(node.children[1]));
-    if (node.type === 'OR') return OR_NAND(convertToNAND(node.children[0]), convertToNAND(node.children[1]));
+    if (node.type === 'AND') return NOT_NAND({ type: 'NAND', children: [convertToNAND(node.children[0]), convertToNAND(node.children[1])] });
+    if (node.type === 'OR') return { type: 'NAND', children: [NOT_NAND(convertToNAND(node.children[0])), NOT_NAND(convertToNAND(node.children[1]))] };
 }
-
-// -- NOR Conversion Engine (Removes double-negations automatically) --
 
 function NOT_NOR(node) {
-    if (node.type === 'NOR' && node.children[0] === node.children[1]) return node.children[0];
+    if (node.type === 'NOR' && astEquals(node.children[0], node.children[1])) return node.children[0];
     return { type: 'NOR', children: [node, node] };
-}
-function OR_NOR(a, b) {
-    return NOT_NOR({ type: 'NOR', children: [a, b] });
-}
-function AND_NOR(a, b) {
-    return { type: 'NOR', children: [NOT_NOR(a), NOT_NOR(b)] };
 }
 function convertToNOR(node) {
     if (node.type === 'VAR' || node.type === 'CONST') return node;
     if (node.type === 'NOT') return NOT_NOR(convertToNOR(node.children[0]));
-    if (node.type === 'AND') return AND_NOR(convertToNOR(node.children[0]), convertToNOR(node.children[1]));
-    if (node.type === 'OR') return OR_NOR(convertToNOR(node.children[0]), convertToNOR(node.children[1]));
+    if (node.type === 'AND') return { type: 'NOR', children: [NOT_NOR(convertToNOR(node.children[0])), NOT_NOR(convertToNOR(node.children[1]))] };
+    if (node.type === 'OR') return NOT_NOR({ type: 'NOR', children: [convertToNOR(node.children[0]), convertToNOR(node.children[1])] });
 }
-// ------------------------------------------------------------------
-// AST Evaluation (Verification)
-// ------------------------------------------------------------------
 
 function evaluateAST(node, inputs) {
     if (!node) return 0;
@@ -405,17 +394,25 @@ function verifyASTs(vars, ttOriginal, astSOP, astNAND, astNOR) {
         let resSOP = evaluateAST(astSOP, inputVals) ? 1 : 0;
         let resNAND = evaluateAST(astNAND, inputVals) ? 1 : 0;
         let resNOR = evaluateAST(astNOR, inputVals) ? 1 : 0;
-
-        if(resSOP !== ttOriginal[i] || resNAND !== ttOriginal[i] || resNOR !== ttOriginal[i]) {
-            console.error("Verification failed at minterm " + i);
-            return false;
-        }
+        if(resSOP !== ttOriginal[i] || resNAND !== ttOriginal[i] || resNOR !== ttOriginal[i]) return false;
     }
     return true;
 }
+
 // ------------------------------------------------------------------
-// SVG Rendering Engine (V2 - Strict Bounding Box & Pin Alignment)
+// SVG Rendering Engine (V3 - Pure Tree Unfolding & Layout)
 // ------------------------------------------------------------------
+
+// CRITICAL FIX: This unfolds shared DAG references into a pure tree
+// so the layout engine doesn't overwrite shared X/Y coordinates.
+function cloneTree(node) {
+    if (!node) return null;
+    let clone = { type: node.type, value: node.value };
+    if (node.children) {
+        clone.children = node.children.map(c => cloneTree(c));
+    }
+    return clone;
+}
 
 function layoutNode(node) {
     if (node.type === 'VAR' || node.type === 'CONST') {
@@ -427,9 +424,9 @@ function layoutNode(node) {
         totalH += dim.h;
         maxW = Math.max(maxW, dim.w);
     });
-    let gap = 20; // Vertical gap between branches
+    let gap = 20; 
     node.h = Math.max(totalH + (node.children.length - 1) * gap, 60);
-    node.w = maxW + 100; // Horizontal gap between layers
+    node.w = maxW + 120; 
     return {w: node.w, h: node.h};
 }
 
@@ -443,14 +440,14 @@ function positionNode(node, x, y) {
     
     node.children.forEach(c => {
         let childY = startY + c.h / 2;
-        positionNode(c, x - 100, childY); // 100px fixed wire length
+        positionNode(c, x - 120, childY); 
         startY += c.h + 20;
     });
 }
 
 function getGateInX(type, x) {
-    if (type === 'OR' || type === 'NOR') return x - 15; // Account for curved back
-    return x - 20; // Flat back gates
+    if (type === 'OR' || type === 'NOR') return x - 15; 
+    return x - 20; 
 }
 
 function getGateOutX(type, x) {
@@ -461,16 +458,19 @@ function getGateOutX(type, x) {
     return x;
 }
 
-function renderAST(node) {
+function renderAST(originalNode) {
+    // 1. Force the AST into a pure tree to fix rendering coordinate overlaps
+    let node = cloneTree(originalNode);
+    
     if(node.type === 'CONST') {
         return `<svg width="200" height="60"><text x="100" y="35" text-anchor="middle" font-family="sans-serif">Output is constant ${node.value}</text></svg>`;
     }
     
-    // 1. Initial Layout
+    // 2. Initial Layout Calculation
     layoutNode(node);
-    positionNode(node, 0, 0); // Temporary coordinates
+    positionNode(node, 0, 0); 
 
-    // 2. Strict Bounding Box Calculation
+    // 3. Strict Bounding Box Calculation
     let bounds = { minX: Infinity, maxX: -Infinity, minY: Infinity, maxY: -Infinity };
     function calcBounds(n) {
         bounds.minX = Math.min(bounds.minX, n.x - 40);
@@ -481,7 +481,7 @@ function renderAST(node) {
     }
     calcBounds(node);
 
-    // 3. Shift everything strictly into positive coordinates with 30px padding
+    // 4. Shift everything cleanly into positive coordinates
     let padX = 30; let padY = 30;
     let shiftX = -bounds.minX + padX;
     let shiftY = -bounds.minY + padY;
@@ -492,15 +492,14 @@ function renderAST(node) {
     }
     applyShift(node);
 
-    let svgWidth = (bounds.maxX - bounds.minX) + (padX * 2) + 60; // Extra room for 'Out' label
+    let svgWidth = (bounds.maxX - bounds.minX) + (padX * 2) + 60; 
     let svgHeight = (bounds.maxY - bounds.minY) + (padY * 2);
 
-    // 4. Render
-    let svg = `<svg width="${svgWidth}" height="${svgHeight}" xmlns="http://www.w3.org/2000/svg">`;
+    // 5. Render to SVG
+    let svg = `<svg width="${svgWidth}" height="${svgHeight}" style="max-width: 100%; height: auto;" xmlns="http://www.w3.org/2000/svg">`;
     svg += drawConnections(node);
     svg += drawNodes(node);
     
-    // Draw Final Output Wire
     let outPinX = getGateOutX(node.type, node.x);
     svg += `<path d="M ${outPinX},${node.y} L ${outPinX + 30},${node.y}" stroke="#0f172a" stroke-width="2" fill="none"/>`;
     svg += `<text x="${outPinX + 40}" y="${node.y + 5}" font-family="sans-serif" font-weight="bold" fill="#0f172a">Out</text>`;
@@ -517,7 +516,6 @@ function drawConnections(node) {
         let outX = getGateOutX(c.type, c.x);
         let inX = getGateInX(node.type, node.x);
 
-        // Distribute pins vertically based on number of inputs
         let spread = Math.min(30, (numChildren - 1) * 15);
         let step = numChildren > 1 ? spread / (numChildren - 1) : 0;
         let inY = (node.y - spread / 2) + (idx * step);
