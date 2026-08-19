@@ -1,0 +1,31 @@
+<!-- Inside adders/index.html -->
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <title>Adders | BooleanMaster Pro</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>tailwind.config = { darkMode: 'class', theme: { extend: { colors: { brand: '#3b82f6' } } } }</script>
+    <link rel="stylesheet" href="../css/style.css"> <!-- Move styles to external css -->
+</head>
+<body class="bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100 flex h-screen overflow-hidden">
+    <!-- Include the exact same Sidebar here, but update hrefs to point up (e.g., href="../") -->
+
+    <main class="flex-1 p-8 overflow-y-auto">
+        <h2 class="text-3xl font-bold mb-8">N-Bit Dynamic Adder</h2>
+        
+        <div class="bg-white dark:bg-gray-800 p-6 rounded-xl border border-gray-700 mb-8 flex gap-4">
+            <input type="number" id="bit-count" value="4" min="1" max="16" class="w-32 bg-gray-900 border border-gray-600 rounded-lg px-4 py-2" placeholder="Bits (e.g., 4)">
+            <button onclick="drawAdder()" class="bg-brand text-white px-6 py-2 rounded-lg font-bold">Draw Block Circuit</button>
+        </div>
+
+        <div class="circuit-container relative h-[600px] border border-gray-700 bg-gray-800 rounded-xl" id="circuit-canvas">
+            <svg id="svg-layer" width="2000" height="1000" class="absolute"></svg>
+        </div>
+    </main>
+
+    <script src="../js/ui.js"></script>
+    <script src="../js/svg-engine.js"></script>
+    <script src="../js/arithmetic.js"></script>
+</body>
+</html>
