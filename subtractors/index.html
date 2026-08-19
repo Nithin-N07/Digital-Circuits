@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <title>Subtractors | BooleanMaster Pro</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>tailwind.config = { darkMode: 'class', theme: { extend: { colors: { brand: '#3b82f6' } } } }</script>
+</head>
+<body class="bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100 flex h-screen overflow-hidden">
+    
+    <!-- Sidebar Navigation -->
+    <aside class="w-64 bg-white dark:bg-gray-800 border-r border-gray-700 flex flex-col justify-between">
+        <div class="p-6">
+            <h1 class="text-2xl font-bold text-brand mb-8">LogicMaster</h1>
+            <nav class="space-y-2">
+                <a href="../" class="block px-4 py-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700 transition">Boolean Solver</a>
+                <a href="../adders/" class="block px-4 py-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700 transition">Adders</a>
+                <a href="../subtractors/" class="block px-4 py-2 rounded bg-brand text-white font-medium">Subtractors</a>
+                <a href="../multipliers/" class="block px-4 py-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700 transition">Multipliers</a>
+            </nav>
+        </div>
+    </aside>
+
+    <main class="flex-1 p-8 overflow-y-auto">
+        <h2 class="text-3xl font-bold mb-8">N-Bit Dynamic Subtractor</h2>
+        
+        <div class="bg-white dark:bg-gray-800 p-6 rounded-xl border border-gray-700 mb-8 flex gap-4">
+            <input type="number" id="bit-count" value="4" min="1" max="16" class="w-32 bg-gray-900 border border-gray-600 rounded-lg px-4 py-2" placeholder="Bits (e.g., 4)">
+            <button onclick="drawSubtractor()" class="bg-brand hover:bg-blue-600 text-white px-6 py-2 rounded-lg font-bold">Draw Subtractor</button>
+        </div>
+
+        <div class="relative h-[600px] border border-gray-700 bg-gray-800 rounded-xl overflow-auto" id="circuit-canvas">
+            <svg id="svg-layer" width="2000" height="1000" class="absolute"></svg>
+        </div>
+    </main>
+
+    <script src="../js/arithmetic.js"></script>
+</body>
+</html>
